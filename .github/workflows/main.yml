@@ -45,7 +45,7 @@ jobs:
         ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         EXCLUDED: ${{ secrets.EXCLUDED }}
-        EXCLUDED_LANGS: ${{ secrets.EXCLUDED_LANGS }}
+        EXCLUDED_LANGS: "Jupyter Notebook, SQL, PowerShell, Shell, PLpgSQL, HTML, CSS"
         EXCLUDE_FORKED_REPOS: true
 
     # Commit all changed files to the repository
