@@ -51,14 +51,18 @@ class Queries(object):
             result = await r_async.json()
             if result is not None:
                 return result
-        except:
-            print("aiohttp failed for GraphQL query")
+        except Exception as e:
+            print(f"aiohttp failed for GraphQL query: {e}")
             # Fall back on non-async requests
             async with self.semaphore:
-                r_requests = requests.post(
-                    "https://api.github.com/graphql",
-                    headers=headers,
-                    json={"query": generated_query},
+                loop = asyncio.get_running_loop()
+                r_requests = await loop.run_in_executor(
+                    None,
+                    lambda: requests.post(
+                        "https://api.github.com/graphql",
+                        headers=headers,
+                        json={"query": generated_query},
+                    )
                 )
                 result = r_requests.json()
                 if result is not None:
@@ -97,14 +101,18 @@ class Queries(object):
                 result = await r_async.json()
                 if result is not None:
                     return result
-            except:
-                print("aiohttp failed for rest query")
+            except Exception as e:
+                print(f"aiohttp failed for rest query: {e}")
                 # Fall back on non-async requests
                 async with self.semaphore:
-                    r_requests = requests.get(
-                        f"https://api.github.com/{path}",
-                        headers=headers,
-                        params=tuple(params.items()),
+                    loop = asyncio.get_running_loop()
+                    r_requests = await loop.run_in_executor(
+                        None,
+                        lambda: requests.get(
+                            f"https://api.github.com/{path}",
+                            headers=headers,
+                            params=tuple(params.items()),
+                        )
                     )
                     if r_requests.status_code == 202:
                         print(f"A path returned 202. Retrying...")
@@ -261,7 +269,7 @@ class Stats(object):
     ):
         self.username = username
         self._ignore_forked_repos = ignore_forked_repos
-        self._exclude_repos = set() if exclude_repos is None else exclude_repos
+        self._exclude_repos = {x.lower() for x in exclude_repos} if exclude_repos is not None else set()
         self._exclude_langs = set() if exclude_langs is None else exclude_langs
         self.queries = Queries(username, access_token, session)
 
@@ -315,22 +323,21 @@ Languages:
                 )
             )
             raw_results = raw_results if raw_results is not None else {}
+            data = raw_results.get("data") or {}
 
-            self._name = raw_results.get("data", {}).get("viewer", {}).get("name", None)
+            self._name = data.get("viewer", {}).get("name", None)
             if self._name is None:
                 self._name = (
-                    raw_results.get("data", {})
-                    .get("viewer", {})
+                    data.get("viewer", {})
                     .get("login", "No Name")
                 )
 
             contrib_repos = (
-                raw_results.get("data", {})
-                .get("viewer", {})
+                data.get("viewer", {})
                 .get("repositoriesContributedTo", {})
             )
             owned_repos = (
-                raw_results.get("data", {}).get("viewer", {}).get("repositories", {})
+                data.get("viewer", {}).get("repositories", {})
             )
 
             repos = owned_repos.get("nodes", [])
@@ -341,7 +348,7 @@ Languages:
                 if repo is None:
                     continue
                 name = repo.get("nameWithOwner")
-                if name in self._repos or name in self._exclude_repos:
+                if name in self._repos or name.lower() in self._exclude_repos:
                     continue
                 self._repos.add(name)
                 self._stargazers += repo.get("stargazers").get("totalCount", 0)
@@ -378,7 +385,7 @@ Languages:
         #       specific filetypes
         langs_total = sum([v.get("size", 0) for v in self._languages.values()])
         for k, v in self._languages.items():
-            v["prop"] = 100 * (v.get("size", 0) / langs_total)
+            v["prop"] = 100 * (v.get("size", 0) / langs_total) if langs_total > 0 else 0
 
     @property
     async def name(self) -> str:
@@ -455,19 +462,21 @@ Languages:
             return self._total_contributions
 
         self._total_contributions = 0
+        query_res = await self.queries.query(Queries.contrib_years())
+        data = query_res.get("data") or {}
         years = (
-            (await self.queries.query(Queries.contrib_years()))
-            .get("data", {})
-            .get("viewer", {})
+            data.get("viewer", {})
             .get("contributionsCollection", {})
             .get("contributionYears", [])
         )
-        by_year = (
-            (await self.queries.query(Queries.all_contribs(years)))
-            .get("data", {})
-            .get("viewer", {})
-            .values()
-        )
+        
+        if not years:
+            return 0
+            
+        contribs_res = await self.queries.query(Queries.all_contribs(years))
+        contribs_data = contribs_res.get("data") or {}
+        by_year = contribs_data.get("viewer", {}).values()
+
         for year in by_year:
             self._total_contributions += year.get("contributionCalendar", {}).get(
                 "totalContributions", 0
