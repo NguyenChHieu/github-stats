@@ -492,7 +492,7 @@ Languages:
                 ):
                     continue
                 author = author_obj.get("author", {}).get("login", "")
-                if author != self.username:
+                if author.lower() != self.username.lower():
                     continue
 
                 for week in author_obj.get("weeks", []):
