@@ -32,10 +32,12 @@ class Queries(object):
         self.semaphore = asyncio.Semaphore(max_connections)
 
     @staticmethod
-    def _raise_for_api_error(result: Dict[str, Any], endpoint: str) -> None:
+    def _raise_for_api_error(result: Any, endpoint: str) -> None:
         """
         Raise explicit errors for authentication/token and other API failures.
         """
+        if not isinstance(result, dict):
+            return
         message = ""
         errors = result.get("errors")
         if isinstance(errors, list) and errors:
