@@ -129,7 +129,11 @@ async def main() -> None:
             exclude_langs=excluded_langs,
             ignore_forked_repos=ignore_forked_repos,
         )
-        await asyncio.gather(generate_languages(s), generate_overview(s))
+        try:
+            await asyncio.gather(generate_languages(s), generate_overview(s))
+        except Exception as e:
+            print(f"Failed to generate GitHub stats images: {e}")
+            raise
 
 
 if __name__ == "__main__":

@@ -31,6 +31,40 @@ class Queries(object):
         self.session = session
         self.semaphore = asyncio.Semaphore(max_connections)
 
+    @staticmethod
+    def _raise_for_api_error(result: Dict[str, Any], endpoint: str) -> None:
+        """
+        Raise explicit errors for authentication/token and other API failures.
+        """
+        message = ""
+        errors = result.get("errors")
+        if isinstance(errors, list) and errors:
+            first_error = errors[0]
+            if isinstance(first_error, dict):
+                message = str(first_error.get("message", "")).strip()
+        elif isinstance(result.get("message"), str):
+            message = result.get("message", "").strip()
+
+        if not message:
+            return
+
+        lowered = message.lower()
+        auth_markers = (
+            "bad credentials",
+            "expired",
+            "revoked",
+            "token",
+            "authentication",
+            "requires authentication",
+            "resource not accessible by personal access token",
+        )
+        if any(marker in lowered for marker in auth_markers):
+            raise RuntimeError(
+                f"GitHub authentication failed for {endpoint}: {message}. "
+                "ACCESS_TOKEN may be expired, revoked, invalid, or missing required scopes."
+            )
+        raise RuntimeError(f"GitHub API request failed for {endpoint}: {message}")
+
     async def query(self, generated_query: str) -> Dict:
         """
         Make a request to the GraphQL API using the authentication token from
@@ -49,6 +83,7 @@ class Queries(object):
                     json={"query": generated_query},
                 )
             result = await r_async.json()
+            self._raise_for_api_error(result, "GraphQL API")
             if result is not None:
                 return result
         except Exception as e:
@@ -65,6 +100,7 @@ class Queries(object):
                     )
                 )
                 result = r_requests.json()
+                self._raise_for_api_error(result, "GraphQL API")
                 if result is not None:
                     return result
         return dict()
@@ -99,6 +135,7 @@ class Queries(object):
                     continue
 
                 result = await r_async.json()
+                self._raise_for_api_error(result, f"/{path}")
                 if result is not None:
                     return result
             except Exception as e:
@@ -119,7 +156,12 @@ class Queries(object):
                         await asyncio.sleep(2)
                         continue
                     elif r_requests.status_code == 200:
-                        return r_requests.json()
+                        result = r_requests.json()
+                        self._raise_for_api_error(result, f"/{path}")
+                        return result
+                    else:
+                        result = r_requests.json()
+                        self._raise_for_api_error(result, f"/{path}")
         # print(f"There were too many 202s. Data for {path} will be incomplete.")
         print("There were too many 202s. Data for this repository will be incomplete.")
         return dict()
